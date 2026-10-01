@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>醫院忘年會現場報到掃描器</title>
+    <!-- 引入 html5-qrcode 掃描器套件 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+    <style>
+        body { font-family: sans-serif; background: #1a1a2e; color: #fff; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .container { background: #162447; padding: 20px; border-radius: 12px; width: 90%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); text-align: center; }
+        h2 { color: #e43f5a; margin-bottom: 15px; font-size: 20px; }
+        #reader { width: 100%; border-radius: 8px; overflow: hidden; background: #000; margin-bottom: 15px; }
+        .input-group { margin-top: 15px; display: flex; gap: 10px; }
+        input[type="text"] { flex: 1; padding: 10px; border: 1px solid #1f4068; border-radius: 6px; background: #1b1b2f; color: #fff; font-size: 16px; }
+        button { padding: 10px 15px; background: #e43f5a; color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #e94560; }
+        #result-box { margin-top: 15px; padding: 12px; border-radius: 6px; font-size: 16px; white-space: pre-line; display: none; }
+        .success { background: #2e7d32; color: #e8f5e9; }
+        .warning { background: #f57c00; color: #fff3e0; }
+        .error { background: #c62828; color: #ffebee; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>🏥 現場快速報到掃描</h2>
+    
+    <!-- 相機鏡頭掃描框 -->
+    <div id="reader"></div>
+    <p style="font-size: 12px; color: #a4b0be;">請將手機鏡頭對準同仁的 QR Code</p>
+
+    <hr style="border: 0; border-top: 1px solid #1f4068; margin: 15px 0;">
+
+    <!-- 手動輸入備用 -->
+    <div style="text-align: left; font-size: 13px; margin-bottom: 5px;">或手動輸入專屬序號：</div>
+    <div class="input-group">
+        <input type="text" id="manualInput" placeholder="輸入專屬序號 (如 PA...)">
+        <button onclick="submitCheckIn(document.getElementById('manualInput').value.trim())">送出</button>
+    </div>
+
+    <!-- 結果提示框 -->
+    <div id="result-box"></div>
+</div>
+
+<script>
+    // 🔴 請在此處填入您 Google Apps Script 的正式 Web App 部署網址
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbz1EEbpjXcsBP6KwYc_zpz6LDpNkByht-0KRCoMiyOcXfYf7EmGnPc9_ZOfsKeRKXkc/exec";
+
+    let isScanning = true;
+
+    function startScanner() {
+        const html5QrCode = new Html5Qrcode("reader");
+        const qrCodeSuccessCallback = (decodedText) => {
+            if (!isScanning) return;
+            isScanning = false; // 暫停重複掃描
+            
+            // 掃到後發送至 GAS
+            submitCheckIn(decodedText);
+
+            // 3秒後恢復掃描
+            setTimeout(() => {
+                isScanning = true;
+            }, 3000);
+        };
+
+        const config = { fps: 10, qrbox: { width: 220, height: 220 } };
+
+        // 啟動相機（優先使用後鏡頭）
+        html5QrCode.start({ facingMode: "environment" }, config, qrCodeSuccessCallback)
+            .catch(err => {
+                console.error("無法啟動相機：", err);
+                showResult("無法啟動相機，請檢查瀏覽器相機權限或改用下方手動輸入。", "error");
+            });
+    }
+
+    // 發送資料至 Google Apps Script 進行驗證與寫入
+    function submitCheckIn(uniqueId) {
+        if (!uniqueId) {
+            showResult("請輸入或掃描有效的專屬序號！", "error");
+            return;
+        }
+
+        showResult("處理中，請稍候...", "warning");
+
+        // 透過 fetch 發送 POST 請求至 GAS
+        fetch(GAS_URL, {
+            method: "POST",
+            body: JSON.stringify({
+                action: "checkin",
+                uniqueId: uniqueId
+            })
+        })
+        .then(response => response.json())
+        .then(res => {
+            showResult(res.message, res.status);
+            if(document.getElementById('manualInput')) {
+                document.getElementById('manualInput').value = "";
+            }
+        })
+        .catch(err => {
+            showResult("連線錯誤：" + err.toString(), "error");
+        });
+    }
+
+    function showResult(message, status) {
+        const box = document.getElementById("result-box");
+        box.style.display = "block";
+        box.className = "";
+        box.classList.add(status);
+        box.innerText = message;
+    }
+
+    // 網頁載入後自動啟動相機
+    window.onload = function() {
+        startScanner();
+    };
+</script>
+
+</body>
+</html>
